@@ -1,0 +1,2 @@
+GHS_POP_E2015_GLOBE_R2019A_4326_30ss_V1_0.tif: https://ghsl.jrc.ec.europa.eu/download.php?ds=pop
+
