@@ -154,11 +154,11 @@ s4 <- projectRaster(s4, s)
 
 stack <- stack(s, s2, s3, s4)
 
-writeRaster(stack, paste0("rasters", i, ".tif"), overwrite=T)
+#writeRaster(stack, paste0("rasters", i, ".tif"), overwrite=T)
 
 # Plot with country boundaries at high resolution #
 
-my.at <- c(5, 10, 15, 20, 30, 60, Inf)
+my.at <- c(5, 10, 15, 20, 30, 60, 120, Inf)
 
 myColorkey <- list(at=my.at, ## where the colors change
                    labels=list(
@@ -178,10 +178,56 @@ idx=c("All", "Public", "Public_membership", "Private")
 stack <- setZ(stack, idx)
 names(stack) <- idx
 
-# png(paste0('maps_tt', i, '.png'), width=2800*2, height=1920*2, res=350, units="px")
-# print(levelplot(stack, layout = c(2, 2), at=my.at, colorkey=myColorkey,  par.settings = YlOrRdTheme, main=paste0("Travel minutes to the nearest charging station (", i, ")"), xlab="Longitude", ylab="Latitude", maxpixels = 2e13)+ layer(sp.polygons(bPols)))
-# dev.off()
+png(paste0('maps_tt', i, '.png'), width=2800*1.5, height=1920*1.5, res=350, units="px")
+print(levelplot(stack, layout = c(2, 2), at=my.at, colorkey=myColorkey,  par.settings = YlOrRdTheme, main=paste0("Travel minutes to the nearest charging station (", i, ")"), xlab="Longitude", ylab="Latitude", maxpixels = 2e13)+ layer(sp.polygons(bPols)))
+dev.off()
 }
+
+
+# Plot maps of points charging station
+
+basemap = rnaturalearth::ne_countries(scale = 10, returnclass = "sf")
+st_crs(basemap)<-4326
+
+sf <- read_sf('all_stations_tier1_2020_.shp')
+
+sf$mode <- ifelse(sf$UsgTyID==1, "Public", ifelse(sf$UsgTyID==4, "Public (membership)", ifelse(sf$UsgTyID==6, "Private", "Other")))
+
+sf$mode <- as.factor(sf$mode)
+
+st_crs(basemap) <- 4326
+st_crs(sf) <- 4326
+
+fig1_maps = ggplot() + 
+  geom_sf(data=basemap, fill="grey", colour="black", lwd=0.001)+
+  geom_sf(data = sf, aes(colour = mode), size=0.3, alpha=0.5)+
+  theme_classic()+
+  scale_colour_discrete(name="Access mode", na.translate=FALSE)+
+  theme(legend.position = "bottom", legend.direction = "horizontal", axis.text.x = element_text(angle = 45, vjust = -0.0025))+
+  ggtitle('Charging stations in 2020 according to the Open Charge Map database')+
+  xlim(c(-28, 32))+
+  ylim(c(37.5, 72))+ 
+  guides(colour = guide_legend(override.aes = list(size=5)))
+
+ggsave("map_chstations_mode.png", fig1_maps, device="png", width = 4.5, height = 3.3, scale=1.8)
+
+
+sf$tier <- ifelse(sf$PowerKW>0 & sf$PowerKW<10, "<10 kW", ifelse(sf$PowerKW>=10 & sf$PowerKW<22, "<22 kW", ifelse(sf$PowerKW>=22 & sf$PowerKW<50, "<50 kW", ifelse(sf$PowerKW>=50, ">=50 kW", "Missing info"))))
+
+sf$tier <- as.factor(sf$tier)
+
+fig2_maps = ggplot() + 
+  geom_sf(data=basemap, fill="grey", colour="black", lwd=0.001)+
+  geom_sf(data = sf, aes(colour = tier), size=0.3, alpha=0.5)+
+  theme_classic()+
+  scale_colour_discrete(name="Power tier", na.translate=FALSE)+
+  theme(legend.position = "bottom", legend.direction = "horizontal", axis.text.x = element_text(angle = 45, vjust = -0.0025))+
+  ggtitle('Charging stations in 2020 according to the Open Charge Map database')+
+  xlim(c(-28, 32))+
+  ylim(c(37.5, 72))+ 
+  guides(colour = guide_legend(override.aes = list(size=5)))
+
+ggsave("map_chstations_tier.png", fig2_maps, device="png", width = 4.5, height = 3.3, scale=1.8)
 
 # animation
 
@@ -443,24 +489,29 @@ sf <- sf[sf$iso2c %in% vectoreu, ]
 
 sf$id = 1:nrow(sf)
 
-id <- fasterize::fasterize(sf, pop, "id", fun = "first")
+pop <- raster("GHS_POP_E2015_GLOBE_R2019A_4326_30ss_V1_0.tif")
+ext <- c(-27, 34, 33, 72)
+pop <- crop(pop, ext)
 
 list = intersect(list.files(pattern = "tier"), list.files(pattern = "2020.tif"))
 s1 <- raster(list[1])
 s1 <- crop(s1, ext)
-s1 <- fast_mask(ras=s1, mask=state)
+s1 <- fast_mask(ras=s1, mask=sf)
 
 s2 <- raster(list[2])
 s2 <- crop(s2, ext)
-s2 <- fast_mask(ras=s2, mask=state)
+s2 <- fast_mask(ras=s2, mask=sf)
 
 s3 <- raster(list[3])
 s3 <- crop(s3, ext)
-s3 <- fast_mask(ras=s3, mask=state)
+s3 <- fast_mask(ras=s3, mask=sf)
 
 s4 <- raster(list[4])
 s4 <- crop(s4, ext)
-s4 <- fast_mask(ras=s4, mask=state)
+s4 <- fast_mask(ras=s4, mask=sf)
+
+pop <- projectRaster(pop, s4)
+id <- fasterize::fasterize(sf, pop, "id", fun = "first")
 
 pop_tt <- stack(s1, s2, s3, s4, pop, id)
 
@@ -475,11 +526,11 @@ sfsf = sf %>% dplyr::select(id, CNTR_CODE) %>% mutate(geometry=NULL)
 pop_tt <- merge(pop_tt, sfsf, by.x="layer.5", by.y="id", all.x=T)
 
 pop_tt_eu <- pop_tt
-pop_tt_eu$CNTR_CODE="EU-wide"
+pop_tt_eu$CNTR_CODE="Europe"
 
 pop_tt <- rbind(pop_tt, pop_tt_eu)
 
-pop_tt <- subset(pop_tt, pop_tt$CNTR_CODE=="EU-wide" | pop_tt$CNTR_CODE=="DE" | pop_tt$CNTR_CODE=="IT" | pop_tt$CNTR_CODE=="FR" | pop_tt$CNTR_CODE=="ES" | pop_tt$CNTR_CODE=="UK")
+pop_tt <- subset(pop_tt, pop_tt$CNTR_CODE=="Europe" | pop_tt$CNTR_CODE=="DE" | pop_tt$CNTR_CODE=="IT" | pop_tt$CNTR_CODE=="FR" | pop_tt$CNTR_CODE=="ES" | pop_tt$CNTR_CODE=="UK")
 
 stat_ecdf <- function(mapping = NULL, data = NULL,
                       geom = "step", position = "identity",
@@ -544,9 +595,9 @@ a = ggplot(pop_tt, aes(x=layer.1,  weight = GHS_POP_E2015_GLOBE_R2019A_4326_30ss
   scale_x_continuous(breaks = c(0, 5, 15, 30, 60, 120))+
   geom_vline(xintercept=c(0, 5, 15, 30, 60, 120), linetype="dotted")+
   theme_classic()+
-  ggtitle("ECDF (all)")+
+  ggtitle("ECD curve (all)")+
   scale_y_continuous(labels = scales::percent_format(accuracy = 1))+
-  scale_colour_brewer(name="Country", palette = "Set1")
+  scale_color_manual(values=c("firebrick2","dodgerblue","black","violet","orange","forestgreen"), name="Country")
 
 b = ggplot(pop_tt, aes(x=layer.2,  weight = GHS_POP_E2015_GLOBE_R2019A_4326_30ss_V1_0, group=CNTR_CODE, colour=CNTR_CODE)) +
   stat_ecdf()+
@@ -556,9 +607,9 @@ b = ggplot(pop_tt, aes(x=layer.2,  weight = GHS_POP_E2015_GLOBE_R2019A_4326_30ss
   scale_x_continuous(breaks = c(0, 5, 15, 30, 60, 120))+
   geom_vline(xintercept=c(0, 5, 15, 30, 60, 120), linetype="dotted")+
   theme_classic()+
-  ggtitle("ECDF (>10 KW)")+
+  ggtitle("ECD curve (>10 KW)")+
   scale_y_continuous(labels = scales::percent_format(accuracy = 1))+
-  scale_colour_brewer(name="Country", palette = "Set1")
+  scale_color_manual(values=c("firebrick2","dodgerblue","black","violet","orange","forestgreen"), name="Country")
 
 c = ggplot(pop_tt, aes(x=layer.3,  weight = GHS_POP_E2015_GLOBE_R2019A_4326_30ss_V1_0, group=CNTR_CODE, colour=CNTR_CODE)) +
   stat_ecdf()+
@@ -568,9 +619,9 @@ c = ggplot(pop_tt, aes(x=layer.3,  weight = GHS_POP_E2015_GLOBE_R2019A_4326_30ss
   scale_x_continuous(breaks = c(0, 5, 15, 30, 60, 120))+
   geom_vline(xintercept=c(0, 5, 15, 30, 60, 120), linetype="dotted")+
   theme_classic()+
-  ggtitle("ECDF (>22 KW)")+
+  ggtitle("ECD curve (>22 KW)")+
   scale_y_continuous(labels = scales::percent_format(accuracy = 1))+
-  scale_colour_brewer(name="Country", palette = "Set1")
+  scale_color_manual(values=c("firebrick2","dodgerblue","black","violet","orange","forestgreen"), name="Country")
 
 d = ggplot(pop_tt, aes(x=layer.4,  weight = GHS_POP_E2015_GLOBE_R2019A_4326_30ss_V1_0, group=CNTR_CODE, colour=CNTR_CODE)) +
   stat_ecdf()+
@@ -580,13 +631,13 @@ d = ggplot(pop_tt, aes(x=layer.4,  weight = GHS_POP_E2015_GLOBE_R2019A_4326_30ss
   scale_x_continuous(breaks = c(0, 5, 15, 30, 60, 120))+
   geom_vline(xintercept=c(0, 5, 15, 30, 60, 120), linetype="dotted")+
   theme_classic()+
-  ggtitle("ECDF (>50 KW)")+
+  ggtitle("ECD curve (>50 KW)")+
   scale_y_continuous(labels = scales::percent_format(accuracy = 1))+
-  scale_colour_brewer(name="Country", palette = "Set1")
+  scale_color_manual(values=c("firebrick2","dodgerblue","black","violet","orange","forestgreen"), name="Country")
 
 ecdfs <- cowplot::plot_grid(a, b, c, d, labels = "AUTO")
 
-ggsave("ecdfs.png", ecdfs, device="png", width = 4.5*1.5, height = 3.3*1.5, scale=1.8)
+ggsave("ecdfs.png", ecdfs, device="png", width = 4.5*1.5, height = 3.3*1.5, scale=1.2)
 
 
 ##########
@@ -762,7 +813,7 @@ fig1_maps = ggplot() +
 
 providers = dplyr::select(sf, providers)
 
-ggsave("fig3_maps.png", fig1_maps, device="png", width = 4.5, height = 3.3, scale=2)
+ggsave("competition.png", fig1_maps, device="png", width = 4.5, height = 3.3, scale=2)
 
 ###
 # Correlation between competition and accessibility#
@@ -770,7 +821,7 @@ ggsave("fig3_maps.png", fig1_maps, device="png", width = 4.5, height = 3.3, scal
 
 bind <- bind_cols(providers, accessibility %>% mutate(geometry=NULL))
 
-cor(bind$providers, bind$popweighteds, , use="complete.obs")
+cor(bind$providers, bind$popweighteds, use="complete.obs")
 
 ## Cities
 
@@ -824,6 +875,8 @@ colnames(cities) <- c("City", "Population (25 km radius buffer), million", "Char
 
 is.num <- sapply(cities, is.numeric)
 cities[is.num] <- lapply(cities[is.num], round, 2)
+
+cities <- cities[order(-cities$`Population (25 km radius buffer), million`),]
 
 # generate latex table
 library(xtable)
