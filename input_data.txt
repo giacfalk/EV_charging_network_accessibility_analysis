@@ -1,2 +1,3 @@
 GHS_POP_E2015_GLOBE_R2019A_4326_30ss_V1_0.tif: https://ghsl.jrc.ec.europa.eu/download.php?ds=pop
-
+Charging points data: https://api.openchargemap.io/v3/
+EV sales data: https://www.acea.be/statistics/tag/category/electric-and-alternative-vehicle-registrations
